@@ -1,0 +1,31 @@
+# Directorios de entornos virtuales
+venv/
+.venv/
+env/
+.env/
+
+# Archivos de caché de Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python/
+
+# Archivos específicos de sistemas operativos
+.DS_Store
+Thumbs.db
+
+# Archivos generados por la aplicación
+exams/
+content_library/
+question_bank.json
+reported_questions.jsonl
+
+# Archivos generados por PyInstaller
+dist/
+build/
+*.spec
+
+# Archivos de logs u otros temporales
+*.log
+*.tmp

@@ -1,0 +1,7 @@
+PyQt6
+openai
+python-docx
+python-pptx
+PyMuPDF
+fpdf2
+Pillow
