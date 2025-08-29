@@ -1,9 +1,9 @@
+import os
 import traceback
 from PyQt6.QtCore import QThread, pyqtSignal
 from openai import APIConnectionError, RateLimitError, AuthenticationError, BadRequestError, InternalServerError
 from .document_processor import DocumentProcessor
 from .exam_generator import ExamGenerator
-import os
 
 class ProcessingWorker(QThread):
     """
@@ -97,12 +97,8 @@ class ExamGenerationWorker(QThread):
             generator = ExamGenerator(self.api_key)
             all_questions = []
 
-            # Umbral de caracteres para el resumen consolidado antes de dividirlo para la generación de examen.
-            # 70,000 caracteres es una estimación segura para ~17,500 tokens, dejando mucho espacio para las respuestas de la IA
-            # y los límites de TPM.
             MAX_SUMMARY_CHARS_FOR_GEN = 70000 
 
-            # Verificar si el resumen consolidado es demasiado grande
             if len(self.summary_context) > MAX_SUMMARY_CHARS_FOR_GEN:
                 self.progress.emit(f"Resumen consolidado muy grande ({len(self.summary_context)} chars). Dividiendo para generar examen...")
                 summary_chunks = generator._split_summary_text(self.summary_context, MAX_SUMMARY_CHARS_FOR_GEN)
@@ -112,7 +108,7 @@ class ExamGenerationWorker(QThread):
 
                 for i, chunk_part in enumerate(summary_chunks):
                     current_questions_count = questions_per_chunk + (1 if i < remainder_questions else 0)
-                    if current_questions_count == 0: continue # No pedir 0 preguntas
+                    if current_questions_count == 0: continue
 
                     self.progress.emit(f"Generando {current_questions_count} preguntas del fragmento {i + 1}/{len(summary_chunks)} del resumen...")
                     part_questions = generator.generate_exam_from_summary_part(
