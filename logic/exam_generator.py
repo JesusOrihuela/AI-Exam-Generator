@@ -4,20 +4,21 @@ from typing import List
 
 class ExamGenerator:
     """Interactúa con la API de OpenAI para resumir fragmentos y generar exámenes."""
+
     def __init__(self, api_key):
         self.client = OpenAI(api_key=api_key)
+        # Modelos fijos: gpt-4.1-mini (long context) para ambas fases
+        self.model_summary = "gpt-4.1-mini"
+        self.model_exam = "gpt-4.1-mini"
 
     @staticmethod
     def _split_summary_text(summary_text: str, max_chars_per_chunk: int = 70000) -> List[str]:
-        """
-        Divide un texto de resumen grande en fragmentos más pequeños.
-        Intenta mantener la coherencia semántica dividiendo por los separadores ya usados.
-        """
+        """Divide un resumen largo en fragmentos manejables."""
         chunks = []
-        if not summary_text: return chunks
+        if not summary_text:
+            return chunks
 
         sections = summary_text.split('\n\n---\n\n')
-        
         current_chunk_parts = []
         current_chunk_len = 0
 
@@ -27,13 +28,13 @@ class ExamGenerator:
                 chunks.append('\n\n---\n\n'.join(current_chunk_parts))
                 current_chunk_parts = []
                 current_chunk_len = 0
-            
+
             current_chunk_parts.append(section)
             current_chunk_len += section_len + len('\n\n---\n\n')
-        
+
         if current_chunk_parts:
             chunks.append('\n\n---\n\n'.join(current_chunk_parts))
-        
+
         final_chunks = []
         if not chunks or any(len(c) > max_chars_per_chunk for c in chunks):
             for chunk_part in chunks if chunks else [summary_text]:
@@ -41,11 +42,11 @@ class ExamGenerator:
                     final_chunks.append(chunk_part[i:i + max_chars_per_chunk])
         else:
             final_chunks = chunks
-        
+
         return final_chunks
 
     def get_summary_from_chunk(self, chunk_content):
-        """Toma un fragmento de contenido y extrae sus conceptos clave."""
+        """Extrae conceptos clave de un fragmento usando el modelo de resumen."""
         system_prompt = """
         Eres un experto en sintetizar información académica y técnica. Tu tarea es analizar el siguiente contenido
         (que puede incluir texto, imágenes interpretadas y fragmentos de código) y extraer los conceptos,
@@ -59,65 +60,88 @@ class ExamGenerator:
         user_message_content.extend(chunk_content)
 
         response = self.client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_message_content}],
+            model=self.model_summary,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message_content}
+            ],
             temperature=0.2
         )
         return response.choices[0].message.content
 
     def generate_exam_from_summary_part(self, summary_part_context, num_questions_part, temperature, top_p):
-        """Genera una parte de un examen a partir de un fragmento de un resumen consolidado."""
+        """Genera preguntas a partir de un fragmento de resumen."""
         if not summary_part_context:
             return []
 
         system_prompt = f"""
-        Eres un experto en pedagogía y creación de exámenes objetivos para evaluar comprensión y aplicación.
-        Tu tarea es generar **{num_questions_part} preguntas de opción múltiple** en español,
+        Eres un experto en pedagogía y creación de exámenes. 
+        Debes generar **exactamente {num_questions_part} preguntas de opción múltiple** en español,
         basadas estrictamente en el "Contexto de Resumen" proporcionado.
 
-        **Especificaciones Clave del Examen:**
-        1.  **Tipo de Reactivos:** Exclusivamente preguntas de opción múltiple.
-        2.  **Formato:** Cada reactivo debe tener un planteamiento escrito y exactamente tres opciones de respuesta.
-        3.  **Correctitud:** Solo una de las tres opciones debe ser la respuesta correcta (clave).
-        4.  **Distractores:** Las otras dos opciones deben ser distractores **verosímiles y plausibles**,
-            diseñados para detectar errores comunes de interpretación o aplicación del contenido.
-            Deben ser similares en estilo y complejidad a la respuesta correcta.
-        5.  **Valoración:** Los enunciados deben estar redactados para valorar **conocimientos y habilidades aplicadas**,
-            evitando preguntas que solo requieran la memorización de definiciones. Deben exigir interpretación, análisis o resolución.
-        6.  **Respuestas Completas:** La opción de respuesta correcta debe **cubrir completamente** lo solicitado en el enunciado. No se aceptan respuestas parcialmente correctas.
-        7.  **Estímulos de Apoyo:** Si el "Contexto de Resumen" contiene referencias a estímulos (ej. fragmentos de código, descripciones de imágenes, textos),
-            integra preguntas que requieran interpretar o analizar estos estímulos para llegar a la respuesta correcta.
-        8.  **Idioma:** Todas las preguntas, opciones y justificaciones deben estar redactadas en español.
-        9.  **Redacción de Enunciados:** NO DEBES incluir en el enunciado frases que hagan referencia directa al material fuente, como "según el texto", "en el documento", "como se menciona", "basado en la información proporcionada", o similares. La pregunta debe ser autocontenida y evaluar directamente el contenido, no la capacidad de citar.
+        **INSTRUCCIONES OBLIGATORIAS:**
+        1. El número de preguntas debe ser **exactamente {num_questions_part}**, ni más ni menos. 
+           Si no puedes generar alguna, incluye un placeholder como "Pregunta no disponible".
+        2. Cada pregunta debe tener todas las claves: 
+           - "pregunta" (string, enunciado autocontenido).
+           - "opciones" (array de exactamente 3 strings).
+           - "respuesta_correcta" (string que debe coincidir con una de las opciones).
+           - "justificacion" (string con cita textual del resumen entre comillas + explicación).
+        3. No se aceptan claves faltantes. TODAS las preguntas deben contener las 4 claves obligatorias.
+        4. Las justificaciones deben comenzar SIEMPRE con una cita textual entre comillas extraída del resumen.
+        5. La opción correcta debe cubrir completamente lo solicitado en el enunciado. 
+        6. No uses frases introductorias como "Según el texto", "En el resumen", etc. 
 
-        **Formato de Salida JSON:**
-        Debes responder con un único objeto JSON que contenga una clave "preguntas",
-        cuyo valor sea un array de objetos. Cada objeto de pregunta debe tener las siguientes claves:
-        -   "pregunta": El enunciado o problema.
-        -   "opciones": Un array de 3 strings, donde el primer elemento es la respuesta correcta y los otros dos son distractores.
-        -   "respuesta_correcta": El texto exacto de la opción correcta.
-        -   "justificacion": Una explicación concisa de por qué la respuesta correcta es la adecuada.
-            **La justificación DEBE COMENZAR con la CITA TEXTUAL DIRECTA del "Contexto de Resumen" entre comillas (`" "`).**
-            **A continuación de la cita, DEBE incluir una breve explicación de por qué la opción correcta es la respuesta adecuada y por qué las otras opciones son incorrectas o menos precisas.**
-            **NO UTILICES frases introductorias como "La respuesta es correcta porque..." o "Según el resumen..." al inicio de la justificación.**
-            **Ejemplo de justificación:**
-            `"Las mitocondrias son centrales energéticas de la célula." Esta afirmación del resumen es clave, ya que la función principal de las mitocondrias es producir ATP mediante la respiración celular. Las otras opciones describen funciones de otros orgánulos o procesos celulares.`
+        **Formato de salida JSON obligatorio:**
+        {{
+            "preguntas": [
+                {{
+                    "pregunta": "...",
+                    "opciones": ["correcta", "distractor1", "distractor2"],
+                    "respuesta_correcta": "...",
+                    "justificacion": "\"Cita del resumen...\" + explicación"
+                }},
+                ...
+            ]
+        }}
         """
-        
+
         response = self.client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=self.model_exam,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Contexto de Resumen (Parte):\n{summary_part_context}\n\nGenera {num_questions_part} preguntas."}
+                {"role": "user", "content": f"Contexto de Resumen (Parte):\n{summary_part_context}\n\nGenera exactamente {num_questions_part} preguntas."}
             ],
-            temperature=temperature, top_p=top_p, response_format={"type": "json_object"}
+            temperature=temperature,
+            top_p=top_p,
+            response_format={"type": "json_object"}
         )
         response_text = response.choices[0].message.content
-        
-        try: json_response = json.loads(response_text)
-        except json.JSONDecodeError: raise ValueError("La API devolvió una respuesta JSON inválida al generar preguntas de una parte del resumen.")
+
+        try:
+            json_response = json.loads(response_text)
+        except json.JSONDecodeError:
+            raise ValueError("La API devolvió una respuesta JSON inválida al generar preguntas.")
 
         if "preguntas" in json_response and isinstance(json_response["preguntas"], list):
-            return json_response["preguntas"]
+            fixed_questions = []
+            for i in range(num_questions_part):
+                if i < len(json_response["preguntas"]):
+                    q = json_response["preguntas"][i]
+                    fixed_questions.append({
+                        "pregunta": q.get("pregunta", f"Pregunta {i+1} no disponible."),
+                        "opciones": q.get("opciones", ["", "", ""]),
+                        "respuesta_correcta": q.get("respuesta_correcta", ""),
+                        "justificacion": q.get("justificacion", "No se generó justificación.")
+                    })
+                else:
+                    # Si el modelo devolvió menos preguntas de las pedidas, rellenamos
+                    fixed_questions.append({
+                        "pregunta": f"Pregunta {i+1} no disponible.",
+                        "opciones": ["", "", ""],
+                        "respuesta_correcta": "",
+                        "justificacion": "No se generó justificación."
+                    })
+            return fixed_questions
         else:
             raise ValueError("La respuesta de la API no contiene una clave 'preguntas' con una lista.")

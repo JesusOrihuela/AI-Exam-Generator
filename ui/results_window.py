@@ -9,7 +9,7 @@ from PyQt6.QtGui import QFont
 from PyQt6.QtCore import Qt
 
 # --- MODIFICACIÓN: Rutas de las fuentes ahora apuntan a assets/fonts/ ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # Obtener el directorio actual del script
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # Obtener el directororio actual del script
 FONTS_DIR = os.path.join(os.path.dirname(BASE_DIR), 'assets', 'fonts') # Ruta a la carpeta assets/fonts
 CUSTOM_FONT_REGULAR = os.path.join(FONTS_DIR, 'DejaVuSansCondensed.ttf')
 CUSTOM_FONT_BOLD = os.path.join(FONTS_DIR, 'DejaVuSansCondensed-Bold.ttf')
@@ -37,17 +37,13 @@ class PDF(FPDF, HTMLMixin):
         self.set_font(CUSTOM_FONT_NAME, '', 10)
         self.set_doc_option('core_fonts_encoding', 'utf-8')
 
-
     def header(self):
         self.set_font(CUSTOM_FONT_NAME if hasattr(self, '_fonts') and CUSTOM_FONT_NAME in self._fonts else 'Arial', 'B', 15)
         self.set_x(self.l_margin)
         self.cell(self.w - 2 * self.l_margin, 10, 'Resultados del Examen', 0, 1, 'C')
         self.ln(5)
 
-    def footer(self):
-        self.set_y(-15)
-        self.set_font(CUSTOM_FONT_NAME if hasattr(self, '_fonts') and CUSTOM_FONT_NAME in self._fonts else 'Arial', '', 8)
-        self.cell(0, 10, f'Página {self.page_no()}/{{nb}}', 0, 0, 'C')
+    # 🔴 footer eliminado → no se mostrará el número de página
 
 
 class ResultsWindow(QDialog):
