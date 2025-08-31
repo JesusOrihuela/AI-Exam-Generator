@@ -26,7 +26,7 @@ endif
 # Archivo de dependencias
 REQUIREMENTS = requirements.txt
 
-# --- Reglas dePHONY ---
+# --- Reglas de PHONY ---
 .PHONY: help install run clean
 
 # --- Regla por Defecto ---
@@ -36,7 +36,7 @@ default: help
 
 help:
 	@echo "--------------------------------------------------------"
-	@echo " Makefile para la aplicacion Generador de Examenes con IA          "
+	@echo " Makefile para la aplicacion Generador de Examenes con IA"
 	@echo "--------------------------------------------------------"
 	@echo "Comandos disponibles:"
 	@echo "  make install    -> Crea el entorno virtual e instala las dependencias."
@@ -50,7 +50,7 @@ install: $(VENV_DIR)/pyvenv.cfg
 
 run: install
 	@echo "Iniciando la aplicacion..."
-	@$(PYTHON) app.py
+	@$(PYTHON) -B app.py
 
 clean:
 	@echo "Limpiando el proyecto..."
@@ -68,8 +68,6 @@ clean:
 
 # --- Reglas de Archivos (Dependencias) ---
 
-# Esta regla crea el entorno virtual.
-# Solo se ejecuta si el directorio $(VENV_DIR) no existe.
 $(VENV_DIR)/pyvenv.cfg: $(REQUIREMENTS)
 	@echo "Creando entorno virtual en '$(VENV_DIR)' usando '$(SYSTEM_PYTHON)'..."
 	$(SYSTEM_PYTHON) -m venv $(VENV_DIR)
