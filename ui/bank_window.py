@@ -2,6 +2,8 @@ import json
 from PyQt6.QtWidgets import (QDialog, QHBoxLayout, QVBoxLayout, QLabel, QListWidget, 
                              QPushButton, QInputDialog, QMessageBox, QListWidgetItem)
 from PyQt6.QtCore import Qt
+from logic.repositories import question_bank as qrepo
+
 
 class QuestionBankWindow(QDialog):
     """Ventana para administrar el banco de preguntas (categorías y preguntas)."""
@@ -9,7 +11,6 @@ class QuestionBankWindow(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Administrar Banco de Preguntas")
         self.setMinimumSize(800, 600)
-        self.bank_file = "question_bank.json"
         self.bank_data = {}
         self.init_ui()
         self.load_bank()
@@ -45,24 +46,16 @@ class QuestionBankWindow(QDialog):
         main_layout.addLayout(q_layout, 2)
         
     def load_bank(self):
-        try:
-            with open(self.bank_file, 'r', encoding='utf-8') as f:
-                self.bank_data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            self.bank_data = {}
-        
+        self.bank_data = qrepo.load_bank()
         self.category_list.clear()
         self.question_list.clear()
         self.category_list.addItems(self.bank_data.keys())
 
     def save_bank(self):
-        try:
-            with open(self.bank_file, 'w', encoding='utf-8') as f:
-                json.dump(self.bank_data, f, indent=4, ensure_ascii=False)
-            return True
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"No se pudo guardar el banco de preguntas: {e}")
-            return False
+        ok = qrepo.save_bank(self.bank_data)
+        if not ok:
+            QMessageBox.critical(self, "Error", "No se pudo guardar el banco de preguntas.")
+        return ok
 
     def display_questions(self, current_item, _):
         self.question_list.clear()
@@ -78,18 +71,21 @@ class QuestionBankWindow(QDialog):
     
     def rename_category(self):
         current_item = self.category_list.currentItem()
-        if not current_item: return
+        if not current_item: 
+            return
         
         old_name = current_item.text()
         new_name, ok = QInputDialog.getText(self, "Renombrar Categoría", "Nuevo nombre:", text=old_name)
         
         if ok and new_name and new_name != old_name and new_name not in self.bank_data:
             self.bank_data[new_name] = self.bank_data.pop(old_name)
-            if self.save_bank(): self.load_bank()
+            if self.save_bank(): 
+                self.load_bank()
 
     def delete_category(self):
         current_item = self.category_list.currentItem()
-        if not current_item: return
+        if not current_item: 
+            return
             
         category = current_item.text()
         reply = QMessageBox.question(self, "Confirmar Eliminación",
@@ -98,12 +94,14 @@ class QuestionBankWindow(QDialog):
         
         if reply == QMessageBox.StandardButton.Yes:
             del self.bank_data[category]
-            if self.save_bank(): self.load_bank()
+            if self.save_bank(): 
+                self.load_bank()
 
     def delete_question(self):
         cat_item = self.category_list.currentItem()
         q_item = self.question_list.currentItem()
-        if not cat_item or not q_item: return
+        if not cat_item or not q_item: 
+            return
 
         category = cat_item.text()
         question_to_delete = q_item.data(Qt.ItemDataRole.UserRole)
@@ -114,4 +112,5 @@ class QuestionBankWindow(QDialog):
         
         if reply == QMessageBox.StandardButton.Yes:
             self.bank_data[category].remove(question_to_delete)
-            if self.save_bank(): self.display_questions(cat_item, None)
+            if self.save_bank(): 
+                self.display_questions(cat_item, None)

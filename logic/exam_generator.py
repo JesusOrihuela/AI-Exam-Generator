@@ -1,15 +1,18 @@
 import json
-from openai import OpenAI
 from typing import List
+from config import MODEL_SUMMARY, MODEL_EXAM
+from logic.llm_client import make_client
+from logic.prompts import SUMMARY_SYSTEM_PROMPT, exam_system_prompt
+
 
 class ExamGenerator:
     """Interactúa con la API de OpenAI para resumir fragmentos y generar exámenes."""
 
     def __init__(self, api_key):
-        self.client = OpenAI(api_key=api_key)
-        # Modelos fijos: gpt-4.1-mini (long context) para ambas fases
-        self.model_summary = "gpt-4.1-mini"
-        self.model_exam = "gpt-4.1-mini"
+        self.client = make_client(api_key=api_key)
+        # Modelos definidos en config (mismo valor que antes)
+        self.model_summary = MODEL_SUMMARY
+        self.model_exam = MODEL_EXAM
 
     @staticmethod
     def _split_summary_text(summary_text: str, max_chars_per_chunk: int = 70000) -> List[str]:
@@ -47,15 +50,7 @@ class ExamGenerator:
 
     def get_summary_from_chunk(self, chunk_content):
         """Extrae conceptos clave de un fragmento usando el modelo de resumen."""
-        system_prompt = """
-        Eres un experto en sintetizar información académica y técnica. Tu tarea es analizar el siguiente contenido
-        (que puede incluir texto, imágenes interpretadas y fragmentos de código) y extraer los conceptos,
-        datos clave, habilidades prácticas evaluables y temas más importantes y únicos.
-        Ignora información trivial, repetitiva, o irrelevante para una evaluación de alto nivel.
-        Presenta los puntos clave de forma clara, concisa y estructurada en una lista o párrafos.
-        Tu objetivo es crear un resumen **denso en información y muy relevante para la creación de preguntas de examen**
-        que valoren comprensión y aplicación.
-        """
+        system_prompt = SUMMARY_SYSTEM_PROMPT
         user_message_content = [{"type": "text", "text": "Sintetiza los puntos clave del siguiente contenido:"}]
         user_message_content.extend(chunk_content)
 
@@ -74,37 +69,7 @@ class ExamGenerator:
         if not summary_part_context:
             return []
 
-        system_prompt = f"""
-        Eres un experto en pedagogía y creación de exámenes. 
-        Debes generar **exactamente {num_questions_part} preguntas de opción múltiple** en español,
-        basadas estrictamente en el "Contexto de Resumen" proporcionado.
-
-        **INSTRUCCIONES OBLIGATORIAS:**
-        1. El número de preguntas debe ser **exactamente {num_questions_part}**, ni más ni menos. 
-           Si no puedes generar alguna, incluye un placeholder como "Pregunta no disponible".
-        2. Cada pregunta debe tener todas las claves: 
-           - "pregunta" (string, enunciado autocontenido).
-           - "opciones" (array de exactamente 3 strings).
-           - "respuesta_correcta" (string que debe coincidir con una de las opciones).
-           - "justificacion" (string con cita textual del resumen entre comillas + explicación).
-        3. No se aceptan claves faltantes. TODAS las preguntas deben contener las 4 claves obligatorias.
-        4. Las justificaciones deben comenzar SIEMPRE con una cita textual entre comillas extraída del resumen.
-        5. La opción correcta debe cubrir completamente lo solicitado en el enunciado. 
-        6. No uses frases introductorias como "Según el texto", "En el resumen", etc. 
-
-        **Formato de salida JSON obligatorio:**
-        {{
-            "preguntas": [
-                {{
-                    "pregunta": "...",
-                    "opciones": ["correcta", "distractor1", "distractor2"],
-                    "respuesta_correcta": "...",
-                    "justificacion": "\"Cita del resumen...\" + explicación"
-                }},
-                ...
-            ]
-        }}
-        """
+        system_prompt = exam_system_prompt(num_questions_part)
 
         response = self.client.chat.completions.create(
             model=self.model_exam,
@@ -135,7 +100,6 @@ class ExamGenerator:
                         "justificacion": q.get("justificacion", "No se generó justificación.")
                     })
                 else:
-                    # Si el modelo devolvió menos preguntas de las pedidas, rellenamos
                     fixed_questions.append({
                         "pregunta": f"Pregunta {i+1} no disponible.",
                         "opciones": ["", "", ""],
