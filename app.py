@@ -173,9 +173,7 @@ class MainWindow(QMainWindow):
         library_group_layout = QVBoxLayout(library_group)
 
         self.content_list = QListWidget()
-        # Modo sin selección: solo checkboxes controlan la elección
-        self.content_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
-        # Escuchar cambios de check para habilitar/deshabilitar "Generar"
+        # IMPORTANTE: permitimos checkboxes por elemento
         self.content_list.itemChanged.connect(self._on_library_item_changed)
         library_group_layout.addWidget(self.content_list)
 
@@ -211,7 +209,7 @@ class MainWindow(QMainWindow):
         bottom_widget = QWidget()
         bottom_layout = QVBoxLayout(bottom_widget)
 
-        self.generation_group = QGroupBox("2. Generar Examen (marca varios en la biblioteca con check)")
+        self.generation_group = QGroupBox("2. Generar Examen (selecciona varios en la biblioteca con check)")
         generation_vbox = QVBoxLayout(self.generation_group)
         config_layout = QHBoxLayout()
         config_layout.addWidget(QLabel("Nº Preguntas:"))
@@ -275,20 +273,18 @@ class MainWindow(QMainWindow):
                         data = json.load(f)
                         item = QListWidgetItem(data['name'])
                         item.setData(Qt.ItemDataRole.UserRole, data)
-                        # Hacerlo chequeable y NO seleccionable
-                        flags = item.flags()
-                        flags |= Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled
-                        flags &= ~Qt.ItemFlag.ItemIsSelectable
-                        item.setFlags(flags)
+                        # Hacerlo chequeable
+                        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
                         item.setCheckState(Qt.CheckState.Unchecked)
                         self.content_list.addItem(item)
                 except:
                     pass
 
+        # Actualizar estado del botón generar
         self._update_generate_enabled()
 
     def _on_library_item_changed(self, item: QListWidgetItem):
-        # Actualizamos la disponibilidad del botón "Generar"
+        # Cuando se marque o desmarque un checkbox, actualizamos el estado del botón
         self._update_generate_enabled()
 
     def _get_checked_library_items(self):
@@ -302,6 +298,11 @@ class MainWindow(QMainWindow):
 
     def _update_generate_enabled(self):
         self.generate_btn.setEnabled(len(self._get_checked_library_items()) > 0)
+
+    def on_content_selected(self, current_item, _):
+        # Ya no dependemos de la selección, sino de los checkboxes;
+        # mantenemos por compatibilidad si quieres hacer algo al seleccionar.
+        pass
 
     def add_files(self):
         files, _ = QFileDialog.getOpenFileNames(self, "Seleccionar documentos", "", "Documentos (*.pdf *.docx *.pptx)")
@@ -335,8 +336,7 @@ class MainWindow(QMainWindow):
         )
         self.processing_worker.progress.connect(self.update_status)
         self.processing_worker.error.connect(self.on_task_error)
-        shef = self.processing_worker.finished
-        shef.connect(self.on_processing_finished)
+        self.processing_worker.finished.connect(self.on_processing_finished)
         self.processing_worker.start()
 
     def on_processing_finished(self, summary, filename):
@@ -421,38 +421,26 @@ class MainWindow(QMainWindow):
     # Otras utilidades de la UI
     # ==========================
     def delete_selected_content(self):
-        """Elimina todos los contenidos MARCADOS con checkbox en la biblioteca."""
-        checked_items = self._get_checked_library_items()
-        if not checked_items:
-            QMessageBox.information(self, "Nada para eliminar", "Marca uno o más contenidos para eliminarlos.")
+        # Eliminamos el contenido del ítem actualmente seleccionado (no el marcado).
+        selected_item = self.content_list.currentItem()
+        if not selected_item:
             return
-
-        count = len(checked_items)
+        data = selected_item.data(Qt.ItemDataRole.UserRole)
         reply = QMessageBox.question(
             self, "Confirmar Eliminación",
-            f"¿Eliminar permanentemente {count} elemento(s) seleccionado(s)?",
+            f"¿Eliminar permanentemente el contenido '{data['name']}'?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-
-        errors = []
-        for it in checked_items:
-            data = it.data(Qt.ItemDataRole.UserRole)
+        if reply == QMessageBox.StandardButton.Yes:
             safe_filename = f"{int(data['created_at'])}_{''.join(filter(str.isalnum, data['name']))}.json"
             file_path = os.path.join(self.CONTENT_LIBRARY_PATH, safe_filename)
             try:
                 if os.path.exists(file_path):
                     os.remove(file_path)
+                self.load_content_library()
+                self.statusBar().showMessage(f"Contenido '{data['name']}' eliminado.")
             except Exception as e:
-                errors.append(f"{data['name']}: {e}")
-
-        self.load_content_library()
-
-        if errors:
-            QMessageBox.warning(self, "Algunas eliminaciones fallaron", "Hubo problemas con:\n- " + "\n- ".join(errors))
-        else:
-            self.statusBar().showMessage(f"Eliminados {count} elemento(s).")
+                QMessageBox.critical(self, "Error", f"No se pudo eliminar: {e}")
 
     def update_status(self, message):
         # Si quieres reflejar progreso en el overlay:
